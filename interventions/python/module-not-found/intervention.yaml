@@ -1,0 +1,44 @@
+id: io.github.dddresearchlabs.agent-intervention-library/python/module-not-found
+version: "1.0.0"
+domain: python
+category: dependency-resolution
+triggers:
+  - kind: exception
+    value: ModuleNotFoundError
+  - kind: message
+    value: "No module named"
+preconditions:
+  - A Python import failed with ModuleNotFoundError.
+  - The failing interpreter or environment and the missing module name can be identified.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Read the traceback to identify the missing module and the failing import.
+    Confirm which Python interpreter, virtual environment, or notebook kernel
+    ran the code. Check whether the module belongs to this project or to a
+    declared third-party dependency.
+
+    For a local module, check its spelling, package layout, and documented
+    project entry point. For a third-party dependency, confirm the distribution
+    name in the project's dependency manifest or official documentation.
+    Import names and distribution names can differ. Do not install a package
+    solely because its name resembles the missing import.
+
+    If a declared dependency is missing, use the project's documented dependency
+    workflow in the failing environment. If installation is unavailable, report
+    the missing dependency and environment. After a correction, repeat the
+    original failing operation in that same environment.
+validation:
+  success_criteria:
+    - The original operation completes without the same ModuleNotFoundError in the same environment.
+    - The resolution identifies the local module or declared dependency responsible for the missing import.
+metadata:
+  title: Resolve a Python ModuleNotFoundError
+  summary: Guide diagnosis of a missing local module or dependency in the failing Python environment.
+  authors:
+    - dddresearchlabs
+  tags:
+    - python
+    - imports
+    - dependencies
