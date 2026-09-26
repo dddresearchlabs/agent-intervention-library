@@ -1,11 +1,21 @@
 # Intervention format, Milestone 1
 
 An intervention is one YAML document containing declarative guidance for a
-specific failure. The normative shape is
+specific failure or workflow state that needs interpretation. Guidance may
+confirm that an intentional state should be preserved, as with detached HEAD
+inspection. A trigger does not imply that an error occurred or a change is needed.
+The normative shape is
 [`intervention.schema.json`](intervention.schema.json), using
 [JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12).
 The [reference entry](../interventions/python/module-not-found/intervention.yaml)
 describes Python `ModuleNotFoundError`.
+
+This is a language-neutral bootstrap/prototype Intervention Library, not the
+Agent Intervention runtime/engine. Python supplied the first reference
+implementation to pressure-test the format; it is not a repository-wide language
+restriction. Future language-specific libraries may enforce their own language
+rule. A canonical `intervention-spec` repository may be split out later. No such
+repository split or runtime integration is implemented here.
 
 All top-level fields are required. Every object rejects unknown fields. Strings
 intended for people must contain a non-whitespace character. Lists reject exact
@@ -14,57 +24,83 @@ hyphens, with at most 64 characters.
 
 ## Identity and classification
 
-### `id`
+### `schema_version`
 
-A stable, globally namespaced identifier, at most 240 characters, with the shape
-`<reverse-dns-namespace>/<domain>/<name>`. The namespace has at least two dot-separated
-components, starts with a letter, and uses lowercase ASCII letters, digits,
-dots, and hyphens. Domain and name use the slug syntax.
+The required quoted string `"1.0"` identifies this declarative format. Other
+values, including numeric `1.0`, are rejected. This is independent of both
+content versions below. The previous unversioned format is no longer accepted;
+there is no compatibility loader or migration machinery.
 
-Repository-owned entries use this namespace:
+### `primitive`
 
-```text
-io.github.dddresearchlabs.agent-intervention-library/python/module-not-found
-```
+The conceptual solved problem, independent of its implementation language or
+publisher. This object has exactly four required fields:
 
-The namespace derives from the repository owner's GitHub identity and repository
-name. Other publishers use a reverse-DNS namespace they control, such as
-`org.example.library/python/module-not-found`. Namespace ownership provides the
-cross-publisher uniqueness convention. Schema validation cannot prove ownership
-or discover collisions in external libraries. Reviewers check ownership.
+- `id`: a stable, dot-separated problem identifier, at most 240 characters, such
+  as `dependency.import.missing-module`. It has at least two components. Each
+  component starts with a lowercase ASCII letter and contains lowercase letters,
+  digits, or single internal hyphens. Do not add a language merely because one
+  implementation uses it. Python and JavaScript share this missing-module ID.
+- `contract_version`: the revision of the conceptual problem's applicability and
+  intended outcome, using the version syntax below. This is a declaration, not
+  proof of stability, compatibility, or empirical validation.
+- `domain`: an open-vocabulary slug for the conceptual area, such as `dependency`
+  or `version-control`, rather than the implementation language.
+- `category`: an open-vocabulary slug grouping related concepts, such as
+  `import-resolution`, `version-resolution`, or `repository-state`.
 
-The test suite rejects duplicate IDs throughout this library, even if their
-versions differ. It also checks that the ID's domain equals the `domain` field.
-IDs remain stable across entry revisions and directory moves. Paths are an
-organizational convention, not an identity source.
+Classification is explicit. Validation does not derive domain or category from
+ID components, language, or paths, or require equality between them. Reviewers
+check conceptual consistency. Shared primitive IDs do not imply shared trigger
+syntax or identical implementation guidance. Cross-repository registration and
+contract-equivalence checks are outside this milestone.
 
-### `version`
+### `implementation`
 
-The entry revision as a quoted string `MAJOR.MINOR.PATCH`, at most 32 characters.
-Each part is a nonnegative integer without leading zeros. Prerelease and build
-suffixes are excluded in Milestone 1. `"1.0.0"` is valid. `1.0`, `"01.0.0"`, and
-`"1.0.0-beta"` are invalid.
+The provider's guidance for a primitive in a particular language context. This
+object has exactly three required fields:
 
-This is the content version, not the schema version. Git history records format
-changes during Milestone 1. A separate format version is deferred until multiple
-formats must coexist.
+- `language`: an open-vocabulary slug, such as `python`, `javascript`, or `rust`.
+  The value `agnostic` denotes guidance independent of a programming language,
+  as in the Git entries. It defines no runtime wildcard or fallback behavior.
+- `version`: the revision of this implementation's guidance and applicability,
+  using the version syntax below.
+- `provider`: a reverse-DNS publisher identifier, at most 240 characters, such
+  as `io.github.dddresearchlabs.agent-intervention-library`. It contains at least
+  two dot-separated lowercase ASCII alphanumeric components with single internal
+  hyphens; the first component starts with a letter. It contains no path or URL.
+  Reviewers check ownership. Schema validation cannot verify ownership or trust.
 
-### `domain`
+Implementation identity is the tuple `(implementation.provider, primitive.id,
+implementation.language)`. The library permits the same primitive ID across
+languages and providers. It rejects duplicate implementation identities, even
+when contract or implementation versions differ: keep one current file per tuple.
+Git history preserves earlier revisions. This is a local uniqueness rule, not a
+registry, resolver, or cross-repository collision guarantee.
 
-A slug naming the technology or problem area, such as `python`. Its value equals
-the middle segment of `id`. Domains are open vocabulary.
+Filesystem paths are not canonical identity. The reference can remain at
+`interventions/python/module-not-found/intervention.yaml`; the `git` directories
+can contain `agnostic` implementations. Discovery remains recursive.
 
-### `category`
+### Contract and implementation versions
 
-A slug grouping related failure types within a domain, such as
-`dependency-resolution`. Categories are open vocabulary.
+Both versions are quoted `MAJOR.MINOR.PATCH` strings, at most 32 characters. Each
+part is a nonnegative integer without leading zeros. Prerelease and build suffixes
+are excluded. `"1.0.0"` is valid; `1.0`, `"01.0.0"`, and `"1.0.0-beta"` are not.
+
+A primitive's contract can remain `"1.0.0"` while its Python implementation advances
+to `"1.2.3"`. Wording corrections and implementation-specific fixes change the
+implementation version, not automatically the conceptual contract. Change the
+contract version when the shared conceptual applicability or intended outcome
+changes. A different solved problem needs a different primitive ID. Neither
+version changes merely because a file moves; schema changes use `schema_version`.
 
 ## Applicability
 
 ### `triggers`
 
-A list of 1 to 16 distinct objects describing observed failure signals. Each
-object has exactly these fields:
+A list of 1 to 16 distinct objects describing observed diagnostic or state signals.
+Each object has exactly these fields:
 
 - `kind`: `exception` for an exception name, or `message` for a literal message
   fragment. These are the only supported kinds.
@@ -75,12 +111,25 @@ Signals describe evidence for a reviewer. This format does not define automatic
 selection, AND or OR composition, case handling, scoring, or precedence. Those
 semantics require a later matcher design.
 
+Literal fragments are examples of observable evidence, not an exhaustive catalog
+of tool versions, locales, or output formats. A fragment does not establish the
+cause or applicability on its own. Similar or overlapping signals do not express
+stronger evidence, precedence, or a relationship between entries. Exact object
+uniqueness in the schema does not establish semantic independence of signals.
+
 ### `preconditions`
 
 A list of 0 to 16 distinct, nonblank strings, each at most 1,000 characters.
 Each string states an applicability condition for human review. An empty list
 explicitly means no additional conditions. Preconditions are not executable
 predicates and are not evaluated by the tests.
+
+Conditions distinguish when diagnosis is useful from when a remedy is justified.
+For example, a partial-initialization message can justify investigating an import
+cycle; changing dependency structure requires confirming the cycle and loaded
+module paths. A dependency resolver warning alone does not establish conflicting
+version requirements. Preconditions describe the needed context and evidence;
+the payload explains how to verify the cause before changing anything.
 
 ## Guidance
 
@@ -117,6 +166,12 @@ These criteria describe intended success. They are not test commands, executable
 assertions, or evidence that the entry has been vetted. The pytest suite checks
 their structure, not whether a Python environment has been repaired.
 
+When guidance offers different paths, criteria state the observable outcome for
+the applicable path in ordinary language. Intentional detached inspection can
+succeed without attaching HEAD to a branch. Ruling out a suspected cause or
+reporting insufficient evidence does not claim that an unresolved failure has
+been repaired. These distinctions add no executable branching or validation.
+
 ## Metadata
 
 ### `metadata.title`
@@ -146,8 +201,8 @@ values such as timestamps and sets, and non-finite numbers. Quote values that
 YAML would otherwise parse as booleans or dates when a string is intended.
 
 The suite discovers every `intervention.yaml` recursively under `interventions/`,
-validates the schema itself, validates each entry, and checks domain consistency
-and library-wide ID uniqueness. It uses
+validates the schema itself, validates each entry, and checks library-wide
+implementation identity uniqueness. It uses
 [`Draft202012Validator`](https://python-jsonschema.readthedocs.io/en/stable/api/jsonschema/validators/)
 with local schema references. It does not fetch schemas or entry-supplied URLs.
 Negative tests exercise malformed entries and rejected YAML constructs.

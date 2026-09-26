@@ -1,0 +1,56 @@
+schema_version: "1.0"
+primitive:
+  id: version-control.checkout.detached-head
+  contract_version: "1.0.0"
+  domain: version-control
+  category: repository-state
+implementation:
+  language: agnostic
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
+triggers:
+  - kind: message
+    value: "You are in 'detached HEAD' state."
+  - kind: message
+    value: "HEAD detached at"
+  - kind: message
+    value: "HEAD detached from"
+preconditions:
+  - HEAD refers directly to a commit rather than an attached local branch.
+  - No rebase or other sequenced Git operation is managing the detached state; inspect the active operation before changing branches.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Inspect repository status, the current commit, local changes, and recent
+    history. Detached HEAD means the checkout points to a commit instead of
+    following a branch. Inspecting a commit or tag this way is legitimate.
+
+    If inspection is intentional and no work needs preservation, remain detached
+    until inspection finishes. Return to the intended existing branch when ready,
+    after checking that no local work will be lost.
+
+    If commits should be kept, create a new, unused branch at the current commit
+    before switching away and verify that it contains those commits. Attach to
+    that branch to continue development. A branch reference preserves commits,
+    not uncommitted edits; preserve and verify those edits separately before
+    changing context. If the intended destination is another existing branch,
+    keep the preservation branch while planning integration.
+
+    Do not force a checkout, reset a branch, or discard changes to remove the
+    detached-state message. Confirm the final state matches the intended task.
+validation:
+  success_criteria:
+    - For intentional inspection, repository status and the current commit confirm the intended detached checkout; attaching to a branch is unnecessary.
+    - For branch-based work or return from inspection, repository status confirms attachment to the intended branch.
+    - If commits need preservation, they are reachable from a named branch before leaving the detached commit.
+    - Any uncommitted work remains available without loss.
+metadata:
+  title: Handle Git detached HEAD deliberately
+  summary: Distinguish intentional commit inspection from development that needs a branch and preserve work before switching.
+  authors:
+    - dddresearchlabs
+  tags:
+    - git
+    - branches
+    - working-tree

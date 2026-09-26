@@ -1,0 +1,52 @@
+schema_version: "1.0"
+primitive:
+  id: dependency.import.unavailable-export
+  contract_version: "1.0.0"
+  domain: dependency
+  category: import-resolution
+implementation:
+  language: javascript
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
+triggers:
+  - kind: message
+    value: "ERR_PACKAGE_PATH_NOT_EXPORTED"
+preconditions:
+  - The target package is present, but its exports do not expose the requested entry or subpath under the active resolution conditions.
+  - The failure is not an absent package, an undefined internal imports alias, or a missing named export from an otherwise resolved module.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Identify the exact specifier, importer, and installed package copy and
+    version from the error and dependency tree. A package can exist while the
+    requested subpath is unavailable through its public exports.
+
+    Inspect that version's package.json exports and official API documentation.
+    Check whether the requested entry is public for the current Node version
+    and import or require mode, including conditional exports. Documentation
+    for another package version may describe a different public API.
+
+    Use the documented public entry that provides the required functionality.
+    If a dependency owns the failing import, identify a compatible documented
+    version combination before proposing a narrow dependency change through the
+    project's workflow. If no supported public API exists, report that boundary.
+
+    Do not bypass exports with absolute internal paths, edit installed package
+    files, or blindly pin another version. After correction, repeat the original
+    operation in the same environment and check the affected API use.
+validation:
+  success_criteria:
+    - The original operation resolves the intended public package entry without ERR_PACKAGE_PATH_NOT_EXPORTED in the same environment.
+    - The selected entry is supported by the installed version and active module mode, and the affected API use passes the project's relevant checks.
+metadata:
+  title: Resolve an unavailable Node.js package export
+  summary: Diagnose a blocked package entry or subpath using the installed version's public export contract.
+  authors:
+    - dddresearchlabs
+  tags:
+    - javascript
+    - nodejs
+    - imports
+    - dependencies
+    - versions

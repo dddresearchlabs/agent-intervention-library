@@ -1,0 +1,53 @@
+schema_version: "1.0"
+primitive:
+  id: dependency.import.missing-module
+  contract_version: "1.0.0"
+  domain: dependency
+  category: import-resolution
+implementation:
+  language: javascript
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
+triggers:
+  - kind: message
+    value: "Cannot find module '"
+  - kind: message
+    value: "Cannot find package '"
+preconditions:
+  - Node.js reports a module or package resolution failure, and the requested specifier and importing file can be identified.
+  - The failure concerns locating a module, not a package export restriction or a missing named export from a resolved module.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Read the full error and import or require chain. Identify the missing
+    specifier and its immediate importer; the missing dependency may be
+    transitive. Confirm the Node version, working directory, owning workspace,
+    and the package manager selected by project documentation and the lockfile.
+
+    For a relative or absolute module path, check spelling, case, location
+    relative to the importer, and expected build output. Check extensions and
+    directory resolution under the actual CommonJS or ES module mode.
+
+    For a package specifier, check the owning workspace's package.json and
+    installed dependency state, including omitted development dependencies or
+    workspace links. Confirm the exact package name from declarations or official
+    documentation. Do not install a similar-looking name or assume a global
+    installation satisfies a local import.
+
+    Correct the path, build output, or dependency state through the established
+    project workflow. Repeat the original operation in the same environment.
+validation:
+  success_criteria:
+    - The original operation no longer reports the missing module from the same importer in the same environment.
+    - The specifier resolves to the intended local file or declared package in the owning workspace.
+metadata:
+  title: Diagnose a Node.js module or package not found
+  summary: Separate file-path, workspace, build-output, and dependency causes of Node.js resolution failures.
+  authors:
+    - dddresearchlabs
+  tags:
+    - javascript
+    - nodejs
+    - imports
+    - dependencies

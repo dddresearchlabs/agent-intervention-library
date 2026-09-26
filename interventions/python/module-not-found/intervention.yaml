@@ -1,7 +1,13 @@
-id: io.github.dddresearchlabs.agent-intervention-library/python/module-not-found
-version: "1.0.0"
-domain: python
-category: dependency-resolution
+schema_version: "1.0"
+primitive:
+  id: dependency.import.missing-module
+  contract_version: "1.0.0"
+  domain: dependency
+  category: import-resolution
+implementation:
+  language: python
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
 triggers:
   - kind: exception
     value: ModuleNotFoundError

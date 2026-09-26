@@ -1,0 +1,58 @@
+schema_version: "1.0"
+primitive:
+  id: dependency.version.conflict
+  contract_version: "1.0.0"
+  domain: dependency
+  category: version-resolution
+implementation:
+  language: python
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
+triggers:
+  - kind: message
+    value: "ResolutionImpossible"
+  - kind: message
+    value: "these package versions have conflicting dependencies"
+  - kind: message
+    value: "pip's dependency resolver does not currently take into account all the packages that are installed."
+preconditions:
+  - A Python dependency resolver or installed-dependency check reports incompatible version requirements.
+  - The report identifies the constrained dependency and the packages or project declarations imposing the constraints.
+  - Accompanying details show incompatible constraints or an installed version outside a requirement; a resolver warning alone is insufficient.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Identify the active Python interpreter, environment, and dependency tool.
+    Find the project's authoritative dependency declarations, constraints, and
+    lockfile, if present. Compare those sources with the installed versions.
+
+    Do not infer a version conflict from a resolver warning alone. Record each
+    conflicting requirement and the package or project pin imposing it, including
+    transitive dependencies. Account for Python version, platform,
+    and selected extras. Distinguish mutually incompatible constraints from an
+    environment that has drifted from compatible declarations.
+
+    Determine the narrowest compatible resolution supported by package metadata
+    and the project's constraints. Describe which declaration or environment
+    needs correction and why. Do not guess versions, upgrade everything, bypass
+    dependency checks, or discard the lockfile. If no compatible set exists,
+    report the blocking constraints and the project decision needed.
+
+    After an authorized correction through the project's dependency workflow,
+    check the resolved and installed requirements in the same environment and
+    repeat the original failing operation. A proposed version set alone is not
+    evidence of resolution.
+validation:
+  success_criteria:
+    - The resolved and installed versions satisfy the identified requirements for the active Python environment and agree with the project's dependency sources.
+    - The dependency check and original failing operation complete without the reported version conflict.
+metadata:
+  title: Diagnose a Python dependency version conflict
+  summary: Identify incompatible requirements and the smallest supported correction to declarations or environment.
+  authors:
+    - dddresearchlabs
+  tags:
+    - python
+    - dependencies
+    - versions

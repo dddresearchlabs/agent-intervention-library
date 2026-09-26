@@ -1,0 +1,55 @@
+schema_version: "1.0"
+primitive:
+  id: version-control.merge.conflict
+  contract_version: "1.0.0"
+  domain: version-control
+  category: repository-state
+implementation:
+  language: agnostic
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
+triggers:
+  - kind: message
+    value: "CONFLICT (content): Merge conflict in"
+  - kind: message
+    value: "Automatic merge failed; fix conflicts and then commit the result."
+  - kind: message
+    value: "Unmerged paths:"
+preconditions:
+  - A merge, rebase, or cherry-pick has stopped with unresolved conflicts recorded by Git.
+  - The repository and interrupted operation can be identified; a refusal to overwrite local changes alone is not a merge conflict.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Inspect repository status to identify the interrupted operation and every
+    unmerged path. Preserve unrelated local changes. Include binary, rename,
+    and deletion conflicts, which may have no text markers.
+
+    Read both sides and the common ancestor where available. Understand each
+    change's intent before choosing a resolution. During rebase, ours and theirs
+    may refer to different roles than expected; identify the commits explicitly.
+
+    Resolve each conflict to preserve the intended combined behavior. Do not
+    accept one side globally or delete markers and their contents indiscriminately.
+    If intent is unclear, report the conflicting requirements for review.
+
+    Review the resulting diff, remove only conflict markers introduced by this
+    operation, and run the project's relevant checks. Stage only reviewed
+    resolutions and confirm Git reports no unmerged paths. Continue the identified
+    operation through its documented workflow only after validation; subsequent
+    rebase or cherry-pick steps may reveal further conflicts.
+validation:
+  success_criteria:
+    - Git reports no unmerged paths for the resolved step, and its introduced conflict markers are absent from the resolved content.
+    - The reviewed diff preserves the intended changes and unrelated work, and the project's relevant checks pass before continuation.
+    - The interrupted operation advances past the resolved step without reporting those same unresolved conflicts.
+metadata:
+  title: Resolve conflicts in an interrupted Git operation
+  summary: Review competing changes, resolve all conflicted paths, and validate before continuing the operation.
+  authors:
+    - dddresearchlabs
+  tags:
+    - git
+    - conflicts
+    - working-tree

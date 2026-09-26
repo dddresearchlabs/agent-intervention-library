@@ -1,0 +1,52 @@
+schema_version: "1.0"
+primitive:
+  id: dependency.import.circular-import
+  contract_version: "1.0.0"
+  domain: dependency
+  category: import-resolution
+implementation:
+  language: python
+  version: "1.0.0"
+  provider: io.github.dddresearchlabs.agent-intervention-library
+triggers:
+  - kind: message
+    value: "from partially initialized module"
+  - kind: message
+    value: "most likely due to a circular import"
+preconditions:
+  - A Python import or module attribute access reports partial initialization, suggesting a possible cycle rather than establishing one.
+  - The traceback and module source paths are available to check for a dependency cycle and name shadowing.
+intervention:
+  type: guidance
+  token_budget: 256
+  payload: |-
+    Trace the import chain to the module whose name is requested before its
+    initialization finishes. Confirm the loaded file paths. A local file that
+    shadows a dependency, a missing symbol, or a missing package can resemble
+    an import cycle and needs a different correction.
+
+    The message alone is not proof of a cycle. Confirm a dependency path back to
+    an initializing module and identify the premature access. If no cycle is
+    supported by the evidence, report that
+    distinction instead of rearranging imports.
+
+    Break the cycle at its ownership boundary: move shared definitions to a
+    module that imports neither side, or pass the required dependency explicitly.
+    Defer an import inside a function only when that dependency is needed after
+    initialization. Do not reorder imports blindly or suppress the exception.
+
+    After correction, repeat the original entry point in a fresh process using
+    the same Python environment, and check the affected modules' callers.
+validation:
+  success_criteria:
+    - The original entry point completes without the partial-initialization failure in a fresh process in the same environment.
+    - The identified dependency cycle no longer causes access to an uninitialized symbol, and affected callers can still use the required definitions.
+metadata:
+  title: Diagnose a Python circular import
+  summary: Distinguish an initialization cycle from other import failures and correct the dependency structure.
+  authors:
+    - dddresearchlabs
+  tags:
+    - python
+    - imports
+    - dependencies

@@ -59,19 +59,22 @@ def validate_intervention(path):
     if errors:
         messages = [f"{error.json_path}: {error.message}" for error in errors]
         raise ValueError(f"{path}:\n" + "\n".join(messages))
-    # Cross-field and cross-file constraints belong here, not in JSON Schema.
-    if document["id"].split("/")[1] != document["domain"]:
-        raise ValueError(f"{path}: ID domain must equal the domain field")
     return document
 
 
-def validate_unique_ids(entries):
+def validate_unique_implementations(entries):
     seen = {}
     for path, document in entries:
-        entry_id = document["id"]
-        if entry_id in seen:
-            raise ValueError(f"Duplicate ID {entry_id}: {seen[entry_id]} and {path}")
-        seen[entry_id] = path
+        # One current entry per implementation, even across content/contract revisions.
+        implementation = document["implementation"]
+        identity = (
+            implementation["provider"],
+            document["primitive"]["id"],
+            implementation["language"],
+        )
+        if identity in seen:
+            raise ValueError(f"Duplicate implementation {identity}: {seen[identity]} and {path}")
+        seen[identity] = path
 
 
 def test_schema_is_valid_draft_2020_12():
@@ -88,9 +91,9 @@ def test_intervention_matches_schema(path):
     validate_intervention(path)
 
 
-def test_library_ids_are_unique():
+def test_library_implementation_identities_are_unique():
     paths = discover_interventions(ROOT / "interventions")
-    validate_unique_ids((path, validate_intervention(path)) for path in paths)
+    validate_unique_implementations((path, validate_intervention(path)) for path in paths)
 
 
 @pytest.fixture
@@ -107,14 +110,27 @@ def test_missing_required_fields_are_rejected(reference, field):
 @pytest.mark.parametrize(
     "path,value",
     [
-        (("id",), "module-not-found"),
-        (("id",), "io.github.example/python/module-not-found\n"),
-        (("version",), "01.0.0"),
-        (("version",), "1.0"),
-        (("version",), 1.0),
-        (("version",), "1.0.0-beta"),
-        (("domain",), "Python"),
-        (("category",), "dependency resolution"),
+        (("schema_version",), "1.1"),
+        (("schema_version",), 1.0),
+        (("schema_version",), ""),
+        (("primitive", "id"), "module-not-found"),
+        (("primitive", "id"), "dependency/import/missing-module"),
+        (("primitive", "id"), "Dependency.import.missing-module"),
+        (("primitive", "id"), "dependency..missing-module"),
+        (("primitive", "id"), "dependency.import.missing_module"),
+        (("primitive", "id"), "dependency.import.missing-module."),
+        (("primitive", "id"), "dependency.import.missing-module\n"),
+        (("primitive", "domain"), "Dependency"),
+        (("primitive", "category"), "import resolution"),
+        (("implementation", "language"), "Python"),
+        (("implementation", "language"), ""),
+        (("implementation", "provider"), "publisher"),
+        (("implementation", "provider"), "https://example.org"),
+        (("implementation", "provider"), "org.example/python"),
+        (("implementation", "provider"), "org..example"),
+        (("implementation", "provider"), "Org.example"),
+        (("implementation", "provider"), "org.example_library"),
+        (("implementation", "provider"), "org.example\n"),
         (("triggers",), []),
         (("triggers", 0, "kind"), "regex"),
         (("triggers", 0, "value"), "   "),
@@ -143,7 +159,25 @@ def test_malformed_values_are_rejected(reference, path, value):
 
 
 @pytest.mark.parametrize(
-    "path", [(), ("triggers", 0), ("intervention",), ("validation",), ("metadata",)]
+    "path", [("primitive", "contract_version"), ("implementation", "version")]
+)
+@pytest.mark.parametrize(
+    "value", ["01.0.0", "1.0", 1.0, "1.0.0-beta", "1.0.0+build", "1.0.0\n", "-1.0.0", True]
+)
+def test_malformed_versions_are_rejected(reference, path, value):
+    reference[path[0]][path[1]] = value
+    assert not VALIDATOR.is_valid(reference)
+
+
+@pytest.mark.parametrize("field", ["id", "version", "domain", "category"])
+def test_legacy_top_level_identity_fields_are_rejected(reference, field):
+    reference[field] = "legacy"
+    assert not VALIDATOR.is_valid(reference)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [(), ("primitive",), ("implementation",), ("triggers", 0), ("intervention",), ("validation",), ("metadata",)],
 )
 def test_unknown_fields_are_rejected(reference, path):
     target = reference
@@ -156,6 +190,8 @@ def test_unknown_fields_are_rejected(reference, path):
 @pytest.mark.parametrize(
     "path,fields",
     [
+        (("primitive",), ("id", "contract_version", "domain", "category")),
+        (("implementation",), ("language", "version", "provider")),
         (("triggers", 0), ("kind", "value")),
         (("intervention",), ("type", "token_budget", "payload")),
         (("validation",), ("success_criteria",)),
@@ -193,11 +229,33 @@ def test_unsafe_or_ambiguous_yaml_is_rejected(tmp_path, source):
         load_intervention(path)
 
 
-def test_duplicate_ids_are_rejected_even_at_different_versions(reference):
+@pytest.mark.parametrize("revision", [None, "implementation", "primitive"])
+def test_duplicate_implementations_are_rejected_even_at_different_versions(reference, revision):
     revised = copy.deepcopy(reference)
-    revised["version"] = "2.0.0"
-    with pytest.raises(ValueError, match="Duplicate ID.*first.yaml and second.yaml"):
-        validate_unique_ids([("first.yaml", reference), ("second.yaml", revised)])
+    if revision is not None:
+        field = "version" if revision == "implementation" else "contract_version"
+        revised[revision][field] = "2.0.0"
+    with pytest.raises(ValueError, match="Duplicate implementation.*first.yaml and second.yaml"):
+        validate_unique_implementations([("first.yaml", reference), ("second.yaml", revised)])
+
+
+@pytest.mark.parametrize(
+    "section,field,value",
+    [
+        ("implementation", "language", "javascript"),
+        ("implementation", "provider", "org.example.library"),
+        ("primitive", "id", "dependency.import.circular-import"),
+    ],
+)
+def test_distinct_implementation_identities_can_coexist(tmp_path, reference, section, field, value):
+    other = copy.deepcopy(reference)
+    other[section][field] = value
+    entries = []
+    for name, document in [("first.yaml", reference), ("second.yaml", other)]:
+        path = tmp_path / name
+        path.write_text(yaml.safe_dump(document), encoding="utf-8")
+        entries.append((path, validate_intervention(path)))
+    validate_unique_implementations(entries)
 
 
 def test_discovery_includes_arbitrarily_nested_entries(tmp_path):
@@ -214,12 +272,18 @@ def test_empty_library_is_rejected(tmp_path):
         discover_interventions(tmp_path)
 
 
-def test_id_domain_must_agree_with_domain(tmp_path, reference):
-    reference["domain"] = "javascript"
-    path = tmp_path / "intervention.yaml"
+@pytest.mark.parametrize("language", ["python", "javascript", "rust", "agnostic"])
+def test_identity_does_not_depend_on_language_classification_or_path(tmp_path, reference, language):
+    reference["primitive"]["domain"] = "module-loading"
+    reference["implementation"]["language"] = language
+    reference["implementation"]["version"] = "1.2.3"
+    path = tmp_path / "unrelated-directory" / "intervention.yaml"
+    path.parent.mkdir()
     path.write_text(yaml.safe_dump(reference), encoding="utf-8")
-    with pytest.raises(ValueError, match="ID domain must equal"):
-        validate_intervention(path)
+    document = validate_intervention(path)
+    assert document["primitive"]["id"] == "dependency.import.missing-module"
+    assert document["primitive"]["contract_version"] == "1.0.0"
+    assert document["implementation"]["version"] == "1.2.3"
 
 
 def test_minimal_optional_fields_and_inert_payload(tmp_path, reference):
